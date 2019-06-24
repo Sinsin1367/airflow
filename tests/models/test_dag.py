@@ -987,7 +987,7 @@ class DagTest(unittest.TestCase):
         )
         dag.sync_to_db(session=session)
         orm_dag = session.query(DagModel).filter(DagModel.dag_id == 'dag').one()
-        #Since the dag existed before it should not follow the pause flag upon creation
+        #Since the dag existed before, it should not follow the pause flag upon creation
         self.assertFalse(orm_dag.is_paused)
 
     def test_new_dag_is_puased_upon_creation(self):
@@ -999,6 +999,6 @@ class DagTest(unittest.TestCase):
         dag.sync_to_db(session=session)
 
         orm_dag = session.query(DagModel).filter(DagModel.dag_id == 'new_nonexisting_dag').one()
-        #Since the dag existed before it should not follow the pause flag upon creation
+        #Since the dag didn't exist before, it should follow the pause flag upon creation
         self.assertTrue(orm_dag.is_paused)
 
