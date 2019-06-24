@@ -1292,7 +1292,7 @@ class DAG(BaseDag, LoggingMixin):
             DagModel).filter(DagModel.dag_id == self.dag_id).first()
         if not orm_dag:
             orm_dag = DagModel(dag_id=self.dag_id)
-            #If this dag is new and not in the DB, we apply pause status upon creation flag.
+            #For new dags if "is_paused_upon_creation" flag is not None we should apply it
             if self.is_paused_upon_creation is not None:
                 orm_dag.is_paused = self.is_paused_upon_creation
             self.log.info("Creating ORM DAG for %s", self.dag_id)
