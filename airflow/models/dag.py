@@ -161,7 +161,8 @@ class DAG(BaseDag, LoggingMixin):
         "{'role1': {'can_dag_read'}, 'role2': {'can_dag_read', 'can_dag_edit'}}"
     :type access_control: dict
     :param is_paused_upon_creation: Specifies if the dag is paused when created for the first time.
-    The default is True, meaning newly generated dags will remain paused by default upon creation.
+    If the dag exists already, this flag will be ignored. If this optional parameter
+    is not specified, default behaviour same as before is exercised.
     :type is_paused_upon_creation: bool
     """
 
