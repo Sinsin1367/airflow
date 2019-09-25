@@ -16,14 +16,17 @@
 # under the License.
 
 import json
+import threading
 import time
 import tenacity
+from collections import defaultdict
 from typing import Tuple, Optional
 
 from airflow.settings import pod_mutation_hook
 from airflow.utils.log.logging_mixin import LoggingMixin
 from airflow.utils.state import State
 from datetime import datetime as dt
+from datetime import timedelta
 from kubernetes.client.models.v1_pod import V1Pod
 from kubernetes import watch, client
 from kubernetes.client.rest import ApiException
@@ -47,6 +50,7 @@ class PodLauncher(LoggingMixin):
         super().__init__()
         self._client = kube_client or get_kube_client(in_cluster=in_cluster,
                                                       cluster_context=cluster_context)
+
         self._watch = watch.Watch()
         self.extract_xcom = extract_xcom
 
@@ -80,13 +84,17 @@ class PodLauncher(LoggingMixin):
             self,
             pod: V1Pod,
             startup_timeout: int = 120,
-            get_logs: bool = True) -> Tuple[State, Optional[str]]:
+            get_logs: bool = True,
+            get_resource_usage_logs: bool = False,
+            resource_usage_logs_interval: int = 60) -> Tuple[State, Optional[str]]:
         """
         Launches the pod synchronously and waits for completion.
 
         :param pod:
         :param startup_timeout: Timeout for startup of the pod (if pod is pending for too long, fails task)
         :param get_logs:  whether to query k8s for logs
+        :param get_resource_usage_logs: whether to get resource usage of the pod or not
+        :param resource_usage_logs_interval: How often (in seconds) to fetch resource utilization
         :return:
         """
         resp = self.run_pod_async(pod)
@@ -99,9 +107,18 @@ class PodLauncher(LoggingMixin):
                 time.sleep(1)
             self.log.debug('Pod not yet started')
 
-        return self._monitor_pod(pod, get_logs)
+        return self._monitor_pod(pod, get_logs, get_resource_usage_logs, resource_usage_logs_interval)
 
-    def _monitor_pod(self, pod: V1Pod, get_logs: bool) -> Tuple[State, Optional[str]]:
+    def _monitor_pod(self,
+                     pod: V1Pod,
+                     get_logs: bool,
+                     get_resource_usage_logs: bool,
+                     resource_usage_logs_interval: int) -> Tuple[State, Optional[str]]:
+        # if resource usages logs are requested start a thread to do it.
+        resource_monitoring_thread = threading.Thread(target=self._log_pod_resource_usage,
+                                                      args=(pod, resource_usage_logs_interval))
+        if get_resource_usage_logs:
+            resource_monitoring_thread.start()
         if get_logs:
             logs = self.read_pod_logs(pod)
             for line in logs:
@@ -117,7 +134,57 @@ class PodLauncher(LoggingMixin):
         while self.pod_is_running(pod):
             self.log.info('Pod %s has state %s', pod.metadata.name, State.RUNNING)
             time.sleep(2)
+        if get_resource_usage_logs:
+            resource_monitoring_thread.join()
         return self._task_status(self.read_pod(pod)), result
+
+    def _log_pod_resource_usage(self, pod: V1Pod, resource_usage_logs_interval: int = 0):
+        if resource_usage_logs_interval <= 0:
+            self.log.error('Resource usage log: Parameter resource_usage_logs_interval must be positive. '
+                           'Cancelling pod usage monitoring thread.')
+            return
+        self.log.info('Resource usage log: pod usage monitoring thread started for pod: {0}'.format(pod.metadata.name))
+        resource_usage_api_url = "/apis/metrics.k8s.io/v1beta1/namespaces/{0}/pods/{1}".format(pod.metadata.namespace,
+                                                                                               pod.metadata.name)
+        cur_time = dt.now()
+        last_reported_time = cur_time - timedelta(seconds=resource_usage_logs_interval)
+        while self.pod_is_running(pod):
+            if cur_time < last_reported_time + timedelta(seconds=resource_usage_logs_interval):
+                time.sleep(1)
+                cur_time = dt.now()
+                continue
+            try:
+                last_reported_time = dt.now()
+                resp = self._client.api_client.call_api(resource_usage_api_url,
+                                                        'GET',
+                                                        _preload_content=True,
+                                                        response_type=object,
+                                                        _return_http_data_only=True)
+            except Exception as e:
+                self.log.error('Resource usage log: Failed to fetch usage for pod: {0}, Exception: {1}'
+                               .format(pod.metadata.name, e))
+                continue
+            containers_usages = self._get_cpu_memory_usage_from_api_response(resp)
+            for container_name, cpu_usage, memory_usage in containers_usages:
+                self.log.info('Resource usage log: pod: {0}, container: {1} -- cpu usage: {2}, memory usage: {3}'
+                              .format(pod.metadata.name,
+                                      container_name,
+                                      cpu_usage,
+                                      memory_usage))
+
+    def _get_cpu_memory_usage_from_api_response(self, metric_api_response: dict):
+        containers_usages =[]
+        try:
+            containers = metric_api_response['containers']
+            for container in containers:
+                container_name = container['name']
+                cpu_usage = container['usage']['cpu']
+                mem_usage = container['usage']['memory']
+                containers_usages.append((container_name, cpu_usage, mem_usage))
+        except Exception as e:
+            self.log.error('Resource usage log: Failed to get containers usages from metric api response: {0}, '
+                           'Exception: {1}'.format(metric_api_response, e))
+        return containers_usages
 
     def _task_status(self, event):
         self.log.info(

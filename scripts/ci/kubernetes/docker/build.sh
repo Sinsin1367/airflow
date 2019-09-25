@@ -44,7 +44,7 @@ cd "${AIRFLOW_SOURCES}"
 docker run -ti --rm -v "${AIRFLOW_SOURCES}:/airflow" \
     -w /airflow "${PYTHON_DOCKER_IMAGE}" ./scripts/ci/kubernetes/docker/compile.sh
 
-pip freeze | grep -v airflow | grep -v mysql> "${DIRNAME}/requirements.txt"
+pip freeze | grep -v airflow | grep -v mysql | grep -v pygobject | grep -v python-apt > "${DIRNAME}/requirements.txt"
 
 sudo rm -rf "${AIRFLOW_SOURCES}/airflow/www/node_modules"
 sudo rm -rf "${AIRFLOW_SOURCES}/airflow/www_rbac/node_modules"

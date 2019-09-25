@@ -74,6 +74,10 @@ class KubernetesPodOperator(BaseOperator):
     :type cluster_context: str
     :param get_logs: get the stdout of the container as logs of the tasks
     :type get_logs: bool
+    :param get_resource_usage_logs: get a periodic resource usage report as logs
+    :type get_resource_usage_logs: bool
+    :param resource_usage_logs_interval: time interval (in seconds) between resource usage logs
+    :type resource_usage_logs_interval: int
     :param annotations: non-identifying metadata you can attach to the Pod.
                         Can be a large range of data, and can include characters
                         that are not permitted by labels.
@@ -157,7 +161,9 @@ class KubernetesPodOperator(BaseOperator):
                 (final_state, result) = launcher.run_pod(
                     pod,
                     startup_timeout=self.startup_timeout_seconds,
-                    get_logs=self.get_logs)
+                    get_logs=self.get_logs,
+                    get_resource_usage_logs=self.get_resource_usage_logs,
+                    resource_usage_logs_interval=self.resource_usage_logs_interval)
             finally:
                 if self.is_delete_operator_pod:
                     launcher.delete_pod(pod)
@@ -188,6 +194,8 @@ class KubernetesPodOperator(BaseOperator):
                  labels=None,
                  startup_timeout_seconds=120,
                  get_logs=True,
+                 get_resource_usage_logs=False,
+                 resource_usage_logs_interval=10,
                  image_pull_policy='IfNotPresent',
                  annotations=None,
                  resources=None,
@@ -226,6 +234,8 @@ class KubernetesPodOperator(BaseOperator):
         self.in_cluster = in_cluster
         self.cluster_context = cluster_context
         self.get_logs = get_logs
+        self.get_resource_usage_logs = get_resource_usage_logs
+        self.resource_usage_logs_interval = resource_usage_logs_interval
         self.image_pull_policy = image_pull_policy
         self.node_selectors = node_selectors or {}
         self.annotations = annotations or {}

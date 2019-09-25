@@ -16,12 +16,34 @@
 # specific language governing permissions and limitations
 # under the License.
 
-if [[ "$1" = "webserver" ]]
-then
-    exec airflow webserver
-fi
-
-if [[ "$1" = "scheduler" ]]
-then
-    exec airflow scheduler
-fi
+case "$1" in
+    scheduler)
+        while true; do
+	    echo "Starting scheduler run at "$(date)
+	    airflow "$@"
+	    exit_code=$(echo $?)
+	    if [ $exit_code != 0]; then
+	        echo "Scheduler had a fatal error. Exit code: "$exit_code
+	    fi
+	done
+        ;;
+    worker)
+        echo "Starting worker"
+        airflow "$@"
+        ;;
+    webserver)
+        echo "Starting webserver"
+        airflow "$@"
+        ;;
+    initdb)
+        airflow db init
+        ;;
+    dev)
+        # For dev purposes run in this mode to run no services and do things in
+        # a bash shell without killing the container's entrypoint.
+        sleep infinity
+        ;;
+    *)
+        "$@"
+        ;;
+esac

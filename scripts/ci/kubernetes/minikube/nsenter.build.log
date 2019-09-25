@@ -1,0 +1,1 @@
+/opt/airflow/scripts/ci/kubernetes/minikube/start_minikube.sh: line 82: docker: command not found
