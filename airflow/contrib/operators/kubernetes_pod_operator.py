@@ -74,6 +74,26 @@ class KubernetesPodOperator(BaseOperator):  # pylint: disable=too-many-instance-
     :type cluster_context: str
     :param get_logs: get the stdout of the container as logs of the tasks
     :type get_logs: bool
+    :param get_resource_usage_logs: Whether or not to get a periodic resource usage report
+                                    in the logs. There will be a maximum usage shown at the
+                                    end also. If the max usage is shown as infinite, it is
+                                    an indication that resource usage units could not be converted.
+                                    Airflow worker pods should have permissions to call metrics
+                                    server APIs if this flag is set.
+    :type get_resource_usage_logs: bool
+    :param resource_usage_fetch_interval: time interval (in seconds) between resource usage
+                                          fetches (must be positive).This parameter along with
+                                          resource_usage_log_interval allows frequent resource
+                                          usage fetches to get more accurate max usage without
+                                          excessive logging. Minimum value for this interval is
+                                          one second. If set to smaller, one second fetch interval
+                                          will be effective.
+    :type resource_usage_fetch_interval: int
+    :param resource_usage_log_interval: time interval (in seconds) between resource usage logs.
+                                        This value should be greater than or equal to resource_
+                                        usage_fetch_interval. If smaller, log intervals and fetch
+                                        intervals would be the same as fetch interval effectively.
+    :type resource_usage_log_interval: int
     :param annotations: non-identifying metadata you can attach to the Pod.
                         Can be a large range of data, and can include characters
                         that are not permitted by labels.
@@ -157,7 +177,10 @@ class KubernetesPodOperator(BaseOperator):  # pylint: disable=too-many-instance-
                 (final_state, result) = launcher.run_pod(
                     pod,
                     startup_timeout=self.startup_timeout_seconds,
-                    get_logs=self.get_logs)
+                    get_logs=self.get_logs,
+                    get_resource_usage_logs=self.get_resource_usage_logs,
+                    resource_usage_fetch_interval=self.resource_usage_fetch_interval,
+                    resource_usage_log_interval=self.resource_usage_log_interval)
             finally:
                 if self.is_delete_operator_pod:
                     launcher.delete_pod(pod)
@@ -188,6 +211,9 @@ class KubernetesPodOperator(BaseOperator):  # pylint: disable=too-many-instance-
                  labels=None,
                  startup_timeout_seconds=120,
                  get_logs=True,
+                 get_resource_usage_logs=False,
+                 resource_usage_fetch_interval=1,
+                 resource_usage_log_interval=60,
                  image_pull_policy='IfNotPresent',
                  annotations=None,
                  resources=None,
@@ -226,6 +252,9 @@ class KubernetesPodOperator(BaseOperator):  # pylint: disable=too-many-instance-
         self.in_cluster = in_cluster
         self.cluster_context = cluster_context
         self.get_logs = get_logs
+        self.get_resource_usage_logs = get_resource_usage_logs
+        self.resource_usage_fetch_interval = resource_usage_fetch_interval
+        self.resource_usage_log_interval = resource_usage_log_interval
         self.image_pull_policy = image_pull_policy
         self.node_selectors = node_selectors or {}
         self.annotations = annotations or {}
